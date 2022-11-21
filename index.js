@@ -380,7 +380,6 @@ const generateLog = async () => {
     child_process.exec(command, async (error, stdout) => {
         const data = stdout.split('\n');
         const dataLength = data.length;
-        console.log(data, 'data');
         const endCommitId = getCommitId(data[0]);
         const startCommitId = getCommitId(data[dataLength - 1]);
         if (!endCommitId && !startCommitId)
