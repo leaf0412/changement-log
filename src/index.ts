@@ -1,75 +1,93 @@
 import child_process from 'child_process';
 import fs from 'fs/promises';
-import path from 'path';
-import readCommit from './getLogFile';
-import { default_log_file, commit_log_regx } from './config';
+import getFileCommitId from './getLogFile';
+import {
+  default_log_file,
+  COMMIT_LOG_REGX,
+  COMMIT_ID_REGX,
+  DEFAULT_TYPES,
+  commitLogsType,
+  configType,
+} from './constant';
+import getConfiguration from './configuration';
 
-const types = [
-  { type: 'fix', section: 'Bug修复' },
-  { type: 'feat', section: '新特性' },
-  { type: 'docs', section: '文档' },
-  { type: 'chore', section: '配置项', hidden: true },
-  { type: 'style', section: '格式', hidden: true },
-  { type: 'refactor', section: '重构', hidden: true },
-  { type: 'perf', section: '性能', hidden: true },
-  { type: 'test', section: '测试', hidden: true },
-  { type: 'build', section: '构建', hidden: true },
-  { type: 'ci', section: 'CI', hidden: true },
-  { type: 'revert', section: '回滚', hidden: true },
-];
+const changelogFallback = `git log --pretty=format:"%s commitid=%h"`;
 
-const changelogFallback = `git log --pretty=format:"%s (%h)" --no-merges`;
+const getCommitId = (commit: string) => {
+  const matchData = commit.match(COMMIT_ID_REGX);
+  if (!matchData) return;
+  const [, commitId] = matchData;
+  return commitId;
+};
 
-const { startCommit, endCommit: from, data: oldData } = readCommit();
-console.log(startCommit, from);
-const to = null;
+const headerContent = `# Changelog\nAll notable changes to this project will be documented in this file.`;
 
-let command = changelogFallback;
-if (from && to) {
-  command = `${changelogFallback} ${from}..${to}`;
-}
+const setHeader = (logFile: string | null | undefined) => {
+  fs.writeFile(logFile ?? default_log_file, Buffer.from(headerContent));
+};
 
-type commitLogsType = { type: string; content: string; commitId: string }[]
+const generateLog = async () => {
+  const config: configType = await getConfiguration();
 
-child_process.exec(command, async (error, stdout) => {
-  const data = stdout.split('\n');
-  // console.log(data);
+  const { last: from, content: oldContent } = getFileCommitId();
 
-  let commitLogs: commitLogsType = [];
-  data.forEach(item => {
-    const reg = commit_log_regx;
-    const matchData = item.match(reg);
-    if (!matchData) return;
-    const [, type, content, commitId] = matchData;
-    commitLogs.push({
-      type: type.trim(),
-      content,
-      commitId,
+  let command = changelogFallback;
+  if (from) {
+    command = `${changelogFallback} ${from}..`;
+  }
+
+  child_process.exec(command, async (error, stdout) => {
+    const data = stdout.split('\n');
+    const dataLength = data.length;
+    console.log(data, 'data');
+
+    const endCommitId = getCommitId(data[0]);
+    const startCommitId = getCommitId(data[dataLength - 1]);
+
+    if (!endCommitId && !startCommitId) return;
+
+    let commitLogs: commitLogsType = [];
+    data.forEach(item => {
+      const reg = COMMIT_LOG_REGX;
+      const matchData = item.match(reg);
+      if (!matchData) return;
+      const [, type, content, commitId] = matchData;
+      commitLogs.push({
+        type: type.trim(),
+        content: content.trim(),
+        commitId,
+      });
     });
-  });
 
-  if (commitLogs.length === 0) return;
-  const fileHeaderContext = `## commit ${
-    from ?? commitLogs[commitLogs.length - 1].commitId
-  }~${commitLogs[0].commitId} (${new Date().toLocaleDateString()})\n`;
-  await fs.writeFile(
-    path.resolve(__dirname, default_log_file),
-    Buffer.from(fileHeaderContext)
-  );
-  // console.log(commitLogs, 'logList');
+    if (commitLogs.length === 0) return;
 
-  types.forEach(async item => {
-    if (!item.hidden) {
+    setHeader(config.logFile);
+
+    const tagContent = `\n\n## commitId-section=${
+      from ?? startCommitId
+    }~${endCommitId} (${new Date().toLocaleDateString()})\n`;
+    await fs.appendFile(default_log_file, Buffer.from(tagContent));
+    const types = config.types ?? DEFAULT_TYPES;
+    const typesLength = types.length;
+    for (let i = 0; i < typesLength; i++) {
+      const item = types[i];
+      if (item.hidden) continue;
       const data = commitLogs.filter(log => log.type === item.type);
-      if (data.length === 0) return;
+      if (data.length === 0) continue;
+      const typeContent = data.map(item => `- ${item.content}`);
       await fs.appendFile(
-        path.resolve(__dirname, default_log_file),
-        Buffer.from(`
-### ${item.section}\n
-${data.map(item => '*' + item.content).join('\n')}\n
-`)
+        default_log_file,
+        Buffer.from(
+          '\n### ' + item.section + '\n\n' + typeContent.join('\n') + '\n'
+        )
       );
     }
+
+    await fs.appendFile(
+      default_log_file,
+      oldContent.replace(headerContent, '')
+    );
   });
-  fs.appendFile(default_log_file, oldData ?? '');
-});
+};
+
+export default generateLog;
