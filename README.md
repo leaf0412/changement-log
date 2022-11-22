@@ -7,7 +7,23 @@ generate  git commit change log
 
 ### 运行
 
-`changement-log`
+- 全局使用
+`npm i changement-log -g`
+
+在 git 项目中直接使用 `changement-log`
+
+- 项目中使用方式
+在 package.json 中的 scripts 添加一条命令
+
+```
+{
+  "scripts": {
+    "log": "changement-log"
+  }
+}
+```
+
+现在就可以使用 npm run log 
 
 ### 配置文件
 
