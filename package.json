@@ -1,6 +1,6 @@
 {
   "name": "changement-log",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "generate git commit changement log",
   "bin": "bin/cli.js",
   "main": "bin/cli.js",
